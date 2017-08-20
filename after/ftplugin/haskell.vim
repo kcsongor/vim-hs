@@ -134,7 +134,6 @@ function! HaskellModuleHeader(...)
     \       . "--\n"
     \       . repeat('-', s:width) . "\n"
     \       . "\n"
-
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -207,6 +206,20 @@ function! ToggleConcealQualified()
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+" Hoogle
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+function! Hoogle(type)
+  let line = line(".")
+  :call fzf#run({
+  \ 'source': 'hoogle "' . a:type . '" --count=100',
+  \ 'sink': {fun -> append(line, fun)},
+  \ 'up': '20%'})
+endfunction
+
+command! -nargs=* Hoogle
+  \ call Hoogle(<q-args>)
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Utilities
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 function! GetSrcDir(path)
@@ -274,7 +287,7 @@ function! ImportStatements(module)
   let qualified = []
   let unqualified = []
   let flags = ""
-  while search('import\( \)\+\(qualified\)\?\( \)*' . a:module, flags) != 0
+  while search('import\( \)\+\(qualified\)\?\( \)*' . a:module . '[^\.]', flags) != 0
       let cur_line = getline(".")
       let cur_pos  = line(".")
       if (match(cur_line, "qualified") >= 0)
