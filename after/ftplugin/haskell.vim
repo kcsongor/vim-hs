@@ -14,8 +14,8 @@ nnoremap <silent> <leader>sb :call SendGHCI(@%)<cr>
 nnoremap <silent> <leader>sc :call SendCORE(@%)<cr>
 nnoremap <silent> <leader>st :call SendGHCITarget(expand('%:p'))<cr>
 
-nnoremap <silent> <leader>ec :edit FindConf(expand('%:p'), 'cabal')<cr>
-nnoremap <silent> <leader>ey :edit FindConf(expand('%:p'), 'yaml')<cr>
+nnoremap <silent> <leader>ec :exe "edit" . FindConf(expand('%:p'), 'cabal')<cr>
+nnoremap <silent> <leader>ey :exe "edit" .  FindConf(expand('%:p'), 'yaml')<cr>
 nnoremap <silent> <leader>mi :call InsertModuleName(expand('%:p:r'))<cr>
 noremap <leader>la :call AddLanguagePragma()<cr>
 noremap <leader>ia :call AddImport()<cr>
