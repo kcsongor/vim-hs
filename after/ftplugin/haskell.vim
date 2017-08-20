@@ -1,6 +1,7 @@
 " Note:
 "   Some of the functions assume that the source files are under 'src/'
 "   The repl bindings only work with Neovim
+"   fzf is required for adding language pragmas
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Mappings
@@ -16,7 +17,8 @@ nnoremap <silent> <leader>st :call SendGHCITarget(expand('%:p'))<cr>
 nnoremap <silent> <leader>ec :edit FindConf(expand('%:p'), 'cabal')<cr>
 nnoremap <silent> <leader>ey :edit FindConf(expand('%:p'), 'yaml')<cr>
 nnoremap <silent> <leader>mi :call InsertModuleName(expand('%:p:r'))<cr>
-noremap <leader>la :emenu GHC_LANGUAGES.
+noremap <leader>la :call AddLanguagePragma()<cr>
+noremap <leader>ia :call AddImport()<cr>
 noremap <leader>si mz:Tabularize/as<CR>vip:sort<CR>`z
 noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:sort<CR>`z
 vnoremap <silent> <Leader>bb :'<,'>!brittany<cr>
@@ -138,14 +140,63 @@ endfunction
 " Language pragmas
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-" Prepopulate the GHC_LANGUAGES menu with a list of available extensions
-let s:ghc_cached_language_pragmas
-  \= sort(split(system('ghc --supported-languages'), '\n'))
-for lp in s:ghc_cached_language_pragmas
-  exe 'amenu GHC_LANGUAGES.' . lp . ' :call append(0, "{-# LANGUAGE ' . lp . ' #-}")<cr>'
-endfor
+function! AddLanguagePragma()
+  :call fzf#run({
+  \ 'source': 'ghc --supported-languages',
+  \ 'sink': {lp -> append(0, "{-# LANGUAGE " . lp . " #-}")},
+  \ 'right': '40%'})
+endfunction
 
-let g:haskell_disable_TH = 1
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+" Imports
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+" Find existing import statements in project and pick one
+function! AddImport()
+  normal G
+  ?^import
+  let line = line(".")
+  call fzf#run({
+  \ 'source': 'ag --nocolor --nogroup --nofilename "import qualified (\S+)(\s)+as" | perl -lpe "s/ +/ /g" | grep -v "^--" | sort | uniq',
+  \ 'sink': {i -> append(line, i)},
+  \ 'right': '40%'})
+endfunction
+
+" Replace a qualified identifier with an unqualified one and add it as an explicit import
+function! Unqualify()
+  let save_pos = getpos(".")
+  let parts = IdentParts(expand('<cWORD>'))
+  if (parts == [])
+    return
+  endif
+  let [qualifier, fun, clean_orig] = parts
+  let module = QualModule(qualifier)
+  if (module == "")
+    return
+  endif
+  let [qualified, unqualified] = ImportStatements(module)
+
+  if (len(unqualified) > 0)
+    exe unqualified[0] . "d"
+    let unqualified[0] = unqualified[0] - 1
+  else
+    call add(unqualified, qualified[0])
+    call add(unqualified,
+            \ substitute(
+            \ substitute(
+            \   qualified[1],
+            \   "qualified", "         ", ""),
+            \   'as \(.\+\)$', "()",""))
+  endif
+
+  let unqualified[1] = substitute(unqualified[1], ')$', ", " . fun . ")", "")
+  let unqualified[1] = substitute(unqualified[1], '(, ', "(", "")
+
+  call append(unqualified[0], unqualified[1])
+  exe '%s/\<' .  clean_orig . '\>/' . fun . '/g'
+
+  call setpos('.', save_pos)
+endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Utilities
@@ -229,38 +280,4 @@ function! ImportStatements(module)
   return [qualified, unqualified]
 endfunction
 
-" Replace a qualified identifier with an unqualified one and add it as an explicit import
-function! Unqualify()
-  let save_pos = getpos(".")
-  let parts = IdentParts(expand('<cWORD>'))
-  if (parts == [])
-    return
-  endif
-  let [qualifier, fun, clean_orig] = parts
-  let module = QualModule(qualifier)
-  if (module == "")
-    return
-  endif
-  let [qualified, unqualified] = ImportStatements(module)
-
-  if (len(unqualified) > 0)
-    exe unqualified[0] . "d"
-    let unqualified[0] = unqualified[0] - 1
-  else
-    call add(unqualified, qualified[0])
-    call add(unqualified,
-            \ substitute(
-            \ substitute(
-            \   qualified[1],
-            \   "qualified", "         ", ""),
-            \   'as \(.\+\)$', "()",""))
-  endif
-
-  let unqualified[1] = substitute(unqualified[1], ')$', ", " . fun . ")", "")
-  let unqualified[1] = substitute(unqualified[1], '(, ', "(", "")
-
-  call append(unqualified[0], unqualified[1])
-  exe '%s/\<' .  clean_orig . '\>/' . fun . '/g'
-
-  call setpos('.', save_pos)
-endfunction
+let g:haskell_disable_TH = 1
