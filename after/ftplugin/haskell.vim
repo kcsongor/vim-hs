@@ -183,29 +183,39 @@ function! InsertModuleName(path)
   exe ':call append(0, "module ' . mname . ' where")'
 endfunction
 
-" Replace a qualified identifier with an unqualified one and add it as an explicit import
-function! Unqualify()
-  let save_pos = getpos(".")
-  let word = map( split(expand('<cWORD>'), '\.')
-             \  , {_, v -> substitute(v, "\\W", "", "g")}
-             \  )
-  if (len(word) == 1)
-    echo "Not a qualified identifier"
-    return
+function! IdentParts(word)
+  let parts = map( split(a:word, '\.')
+              \  , {_, v -> substitute(v, "\\W", "", "g")}
+              \  )
+  if (len(parts) == 1)
+    echom "Not a qualified identifier"
+    return []
   endif
 
-  let qualifier  = join(word[0:-2], '.')
-  let clean_orig = join(word[0:-1], '.')
-  let fun        = word[-1]
+  let qualifier  = join(parts[0:-2], '.')
+  let clean      = join(parts[0:-1], '.')
+  let ident      = parts[-1]
 
-  call search('qualified \(.\)\+ as ' . qualifier, "")
-  let module_name = split(getline("."), ' \+')[2]
+  return [qualifier, ident, clean]
+endfunction
 
+function! QualModule(qualifier)
+  let save_pos = getpos(".")
+  if (search('qualified \(.\)\+ as ' . a:qualifier, "") == 0)
+    echom ("No module imported as " . a:qualifier)
+    return ""
+  endif
+  let module = split(getline("."), ' \+')[2]
+  call setpos(".", save_pos)
+  return module
+endfunction
+
+function! ImportStatements(module)
+  let save_pos = getpos(".")
   let qualified = []
   let unqualified = []
-
   let flags = ""
-  while search(module_name, flags) != 0
+  while search('import\( \)\+\(qualified\)\?\( \)*' . a:module, flags) != 0
       let cur_line = getline(".")
       let cur_pos  = line(".")
       if (match(cur_line, "qualified") >= 0)
@@ -215,6 +225,23 @@ function! Unqualify()
       endif
       let flags = "W"
   endwhile
+  call setpos(".", save_pos)
+  return [qualified, unqualified]
+endfunction
+
+" Replace a qualified identifier with an unqualified one and add it as an explicit import
+function! Unqualify()
+  let save_pos = getpos(".")
+  let parts = IdentParts(expand('<cWORD>'))
+  if (parts == [])
+    return
+  endif
+  let [qualifier, fun, clean_orig] = parts
+  let module = QualModule(qualifier)
+  if (module == "")
+    return
+  endif
+  let [qualified, unqualified] = ImportStatements(module)
 
   if (len(unqualified) > 0)
     exe unqualified[0] . "d"
