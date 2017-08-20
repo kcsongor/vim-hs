@@ -3,11 +3,6 @@
 "   The repl bindings only work with Neovim
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-" Autocmds
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-autocmd! bufwritepost *.hs call FixLocation()
-
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Mappings
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 nnoremap <silent> --h "=HaskellModuleHeader()<CR>:0put =<cr>
@@ -25,6 +20,8 @@ noremap <leader>la :emenu GHC_LANGUAGES.
 noremap <leader>si mz:Tabularize/as<CR>vip:sort<CR>`z
 noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:sort<CR>`z
 vnoremap <silent> <Leader>bb :'<,'>!brittany<cr>
+
+nnoremap <leader>uq :call Unqualify()<cr>
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Config files
@@ -125,8 +122,8 @@ function! HaskellModuleHeader(...)
     \       . "-- Module      : " . name . "\n"
     \       . "-- Note        : " . note . "\n"
     \       . "-- Copyright   : (C) " . strftime('%Y') . " Csongor Kiss\n"
-    \       . "-- License     : BSD3\n"
     \       . "-- Maintainer  : Csongor Kiss <kiss.csongor.kiss@gmail.com>\n"
+    \       . "-- License     : BSD3\n"
     \       . "-- Stability   : experimental\n"
     \       . "-- Portability : non-portable\n"
     \       . "--\n"
@@ -184,4 +181,59 @@ endfunction
 function! InsertModuleName(path)
   let mname  = MkModuleName(a:path)
   exe ':call append(0, "module ' . mname . ' where")'
+endfunction
+
+" Replace a qualified identifier with an unqualified one and add it as an explicit import
+function! Unqualify()
+  let save_pos = getpos(".")
+  let word = map( split(expand('<cWORD>'), '\.')
+             \  , {_, v -> substitute(v, "\\W", "", "g")}
+             \  )
+  if (len(word) == 1)
+    echo "Not a qualified identifier"
+    return
+  endif
+
+  let qualifier  = join(word[0:-2], '.')
+  let clean_orig = join(word[0:-1], '.')
+  let fun        = word[-1]
+
+  call search('qualified \(.\)\+ as ' . qualifier, "")
+  let module_name = split(getline("."), ' \+')[2]
+
+  let qualified = []
+  let unqualified = []
+
+  let flags = ""
+  while search(module_name, flags) != 0
+      let cur_line = getline(".")
+      let cur_pos  = line(".")
+      if (match(cur_line, "qualified") >= 0)
+        let qualified = [cur_pos, cur_line]
+      else
+        let unqualified = [cur_pos, cur_line]
+      endif
+      let flags = "W"
+  endwhile
+
+  if (len(unqualified) > 0)
+    exe unqualified[0] . "d"
+    let unqualified[0] = unqualified[0] - 1
+  else
+    call add(unqualified, qualified[0])
+    call add(unqualified,
+            \ substitute(
+            \ substitute(
+            \   qualified[1],
+            \   "qualified", "         ", ""),
+            \   'as \(.\+\)$', "()",""))
+  endif
+
+  let unqualified[1] = substitute(unqualified[1], ')$', ", " . fun . ")", "")
+  let unqualified[1] = substitute(unqualified[1], '(, ', "(", "")
+
+  call append(unqualified[0], unqualified[1])
+  exe '%s/\<' .  clean_orig . '\>/' . fun . '/g'
+
+  call setpos('.', save_pos)
 endfunction
