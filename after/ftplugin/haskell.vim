@@ -8,6 +8,7 @@
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 nnoremap <silent> --h "=HaskellModuleHeader()<CR>:0put =<cr>
 nnoremap <silent> <leader>li O<esc>80i-<esc>
+nnoremap <silent> <leader>cc :silent! call ToggleConcealQualified()<cr>
 
 nnoremap <silent> <leader>r :w<cr> :call ReloadGHCI()<cr>
 nnoremap <silent> <leader>sb :call SendGHCI(@%)<cr>
@@ -20,7 +21,7 @@ nnoremap <silent> <leader>mi :call InsertModuleName(expand('%:p:r'))<cr>
 noremap <leader>la :call AddLanguagePragma()<cr>
 noremap <leader>ia :call AddImport()<cr>
 noremap <leader>si mz:Tabularize/as<CR>vip:sort<CR>`z
-noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:sort<CR>`z
+noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:!sort\|uniq<CR>`z
 vnoremap <silent> <Leader>bb :'<,'>!brittany<cr>
 
 nnoremap <leader>uq :call Unqualify()<cr>
@@ -144,7 +145,7 @@ function! AddLanguagePragma()
   :call fzf#run({
   \ 'source': 'ghc --supported-languages',
   \ 'sink': {lp -> append(0, "{-# LANGUAGE " . lp . " #-}")},
-  \ 'right': '40%'})
+  \ 'up': '20%'})
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -196,6 +197,13 @@ function! Unqualify()
   exe '%s/\<' .  clean_orig . '\>/' . fun . '/g'
 
   call setpos('.', save_pos)
+endfunction
+
+" Hide/show qualifiers (requires conceallevel > 0)
+function! ToggleConcealQualified()
+  if (matchdelete(65) == -1)
+    call matchadd('Conceal', '\(qualified\|import\|as\)\@<![^a-zA-Z0-9\.]\zs\([A-Z]\w*\.\)\+', 100, 65)
+  endif
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
