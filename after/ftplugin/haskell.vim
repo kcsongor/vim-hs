@@ -7,19 +7,21 @@
 " Mappings
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 nnoremap <silent> --h "=HaskellModuleHeader()<CR>:0put =<cr>
+nnoremap <silent> <leader>ho :Hoogle <C-R><C-W><cr>
 nnoremap <silent> <leader>li O<esc>80i-<esc>
 nnoremap <silent> <leader>cc :silent! call ToggleConcealQualified()<cr>
 
 nnoremap <silent> <leader>r :w<cr> :call ReloadGHCI()<cr>
-nnoremap <silent> <leader>sb :call SendGHCI(@%)<cr>
-nnoremap <silent> <leader>sc :call SendCORE(@%)<cr>
-nnoremap <silent> <leader>st :call SendGHCITarget(expand('%:p'))<cr>
+nnoremap <silent> <leader>sb :call <SID>send_ghci(@%)<cr>
+vnoremap <silent> <leader>sb :call Eval()<cr>
+nnoremap <silent> <leader>sc :call <SID>send_core(@%)<cr>
+nnoremap <silent> <leader>st :call <SID>send_ghci_target(expand('%:p'))<cr>
 
-nnoremap <silent> <leader>ec :exe "edit" . FindConf(expand('%:p'), 'cabal')<cr>
-nnoremap <silent> <leader>ey :exe "edit" . FindConf(expand('%:p'), 'yaml')<cr>
-nnoremap <silent> <leader>mi :call InsertModuleName(expand('%:p:r'))<cr>
+nnoremap <silent> <leader>ec :exe "edit" . <SID>find_conf(expand('%:p'), 'cabal')<cr>
+nnoremap <silent> <leader>ey :exe "edit" . <SID>find_conf(expand('%:p'), 'yaml')<cr>
+nnoremap <silent> <leader>mi :call <SID>insert_module_name(expand('%:p:r'))<cr>
 noremap <leader>la :call AddLanguagePragma()<cr>
-noremap <leader>ia :call AddImport()<cr>
+noremap <leader>ia :call ImportModule()<cr>
 noremap <leader>si mz:Tabularize/as<CR>vip:sort<CR>`z
 noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:!sort\|uniq<CR>`z
 vnoremap <silent> <Leader>bb :'<,'>!brittany<cr>
@@ -31,22 +33,18 @@ nnoremap <leader>uq :call Unqualify()<cr>
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 " Walk up the directory structure and find the first file with extension 'type'
-function! FindConf(path, type)
+function! s:find_conf(path, type)
   let found  = split(globpath(a:path, '*.' . a:type), '\n')
   let dir    = fnamemodify(a:path, ':h')
   if (dir != '/')
     if (len(found) == 0)
-      return FindConf(dir, a:type)
+      return s:find_conf(dir, a:type)
     else
       return found[0]
     endif
   else
     echo "No " . a:type . " file found"
   endif
-endfunction
-
-function! EditConfig(path, type)
-  execute 'edit' FindConf(path, type)
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -58,7 +56,7 @@ function! GhciBuffer()
 endfunction
 
 " Open current cabal project in GHCI
-function! SendGHCITarget(path)
+function! s:send_ghci_target(path)
     let bnr = GhciBuffer()
     if bnr > 0
       :exe bnr . "wincmd w"
@@ -68,13 +66,24 @@ function! SendGHCITarget(path)
     endif
 endfunction
 
+function! Eval()
+  exe "'<,'>y z"
+  let cur = bufwinnr('%')
+  let bnr = GhciBuffer()
+  if bnr > 0
+    exe bnr . "wincmd w"
+    startinsert
+    call feedkeys("\<C-l>:{\<cr>\<Esc>\<C-\>\<C-n>\"zpi\<cr>:}\<cr>")
+  endif
+endfunction
+
 " Open current file in GHCI
-function! SendGHCI(file)
+function! s:send_ghci(file)
     let bnr = GhciBuffer()
     if bnr > 0
       :exe bnr . "wincmd w"
     else
-      vnew | :call termopen("stack repl " . a:file) | :startinsert
+      vnew | :call termopen("stack ghci " . a:file) | :startinsert
     endif
 endfunction
 
@@ -94,7 +103,7 @@ endfunction
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 " View core dump of the current file
-function! SendCORE(file)
+function! s:send_core(file)
     let bnr = bufwinnr("ghc-core")
     if bnr > 0
       :exe bnr . "wincmd w"
@@ -114,16 +123,12 @@ endfunction
 " Module header
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 let s:width = 80
-
 function! HaskellModuleHeader(...)
     let name = GetModuleName()
-    let note = 0 < a:0 ? a:1 : inputdialog("Note: ")
-    let description = 1 < a:0 ? a:2 : inputdialog("Description: ")
-
+    let description = 0 < a:0 ? a:1 : inputdialog("Description: ")
     return  repeat('-', s:width) . "\n"
     \       . "-- |\n" 
     \       . "-- Module      : " . name . "\n"
-    \       . "-- Note        : " . note . "\n"
     \       . "-- Copyright   : (C) " . strftime('%Y') . " Csongor Kiss\n"
     \       . "-- Maintainer  : Csongor Kiss <kiss.csongor.kiss@gmail.com>\n"
     \       . "-- License     : BSD3\n"
@@ -152,7 +157,7 @@ endfunction
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 " Find existing import statements in project and pick one
-function! AddImport()
+function! ImportModule()
   normal G
   ?^import
   let line = line(".")
@@ -165,7 +170,7 @@ endfunction
 " Replace a qualified identifier with an unqualified one and add it as an explicit import
 function! Unqualify()
   let save_pos = getpos(".")
-  let parts = IdentParts(expand('<cWORD>'))
+  let parts = s:ident_parts(expand('<cWORD>'))
   if (parts == [])
     return
   endif
@@ -174,25 +179,7 @@ function! Unqualify()
   if (module == "")
     return
   endif
-  let [qualified, unqualified] = ImportStatements(module)
-
-  if (len(unqualified) > 0)
-    exe unqualified[0] . "d"
-    let unqualified[0] = unqualified[0] - 1
-  else
-    call add(unqualified, qualified[0])
-    call add(unqualified,
-            \ substitute(
-            \ substitute(
-            \   qualified[1],
-            \   "qualified", "         ", ""),
-            \   'as \(.\+\)$', "()",""))
-  endif
-
-  let unqualified[1] = substitute(unqualified[1], ')$', ", " . fun . ")", "")
-  let unqualified[1] = substitute(unqualified[1], '(, ', "(", "")
-
-  call append(unqualified[0], unqualified[1])
+  call AddImport(module, fun)
   exe '%s/\<' .  clean_orig . '\>/' . fun . '/g'
 
   call setpos('.', save_pos)
@@ -212,17 +199,27 @@ function! Hoogle(type)
   let line = line(".")
   :call fzf#run({
   \ 'source': 'hoogle "' . a:type . '" --count=100',
-  \ 'sink': {fun -> append(line, fun)},
+  \ 'sink': {fun -> s:hoogle_sink(line, fun)},
   \ 'up': '20%'})
 endfunction
 
 command! -nargs=* Hoogle
   \ call Hoogle(<q-args>)
 
+function! s:hoogle_sink(line, fun)
+  if (match(a:fun, "::") >= 0)
+    let [modulename, type] = split(a:fun, "::")
+    let [module, name] = split(modulename, " ")
+    call AddImport(module, name)
+  else
+    call append(a:line, a:fun)
+  endif
+endfunction
+
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Utilities
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-function! GetSrcDir(path)
+function! s:get_src_dir(path)
   return split(a:path, 'src/')[0]
 endfunction
 
@@ -237,7 +234,7 @@ endfunction
 
 function! FixLocation()
   let path    = expand('%:p')
-  let srcdir  = GetSrcDir(path)
+  let srcdir  = s:get_src_dir(path)
   let newpath =  srcdir . 'src/' . substitute(GetModuleName(), "\\.", "/", "g") . ".hs"
   let newpathz = newpath
   call mkdir(fnamemodify(newpathz, ':h'), 'p')
@@ -246,16 +243,47 @@ function! FixLocation()
 endfunction
 
 " Work out the module name from the directory structure
-function! MkModuleName(path)
+function! s:make_module_name(path)
   return substitute(split(a:path, 'src/')[1], "/", ".", "g")
 endfunction
 
-function! InsertModuleName(path)
-  let mname  = MkModuleName(a:path)
+function! s:insert_module_name(path)
+  let mname  = s:make_module_name(a:path)
   exe ':call append(0, "module ' . mname . ' where")'
 endfunction
 
-function! IdentParts(word)
+function! AddImport(module, fun)
+  let [qualified, unqualified] = ImportStatements(a:module)
+
+  if (len(unqualified) > 0)
+    " unqalified import exists, use it
+    exe unqualified[0] . "d"
+    let unqualified[0] = unqualified[0] - 1
+  elseif (len(qualified) > 0)
+    " qualified import exists, mirror it
+    call add(unqualified, qualified[0])
+    call add(unqualified,
+            \ substitute(
+            \ substitute(
+            \   qualified[1],
+            \   "qualified", "         ", ""),
+            \   'as \(.\+\)$', "()",""))
+  else
+    " create new unqalified import
+    let save_pos = getpos(".")
+    normal G
+    ?^import
+    let line = line(".")
+    call add(unqualified, line)
+    call add(unqualified, "import           " . a:module . " ()")
+    call setpos('.', save_pos)
+  endif
+  let unqualified[1] = substitute(unqualified[1], ')$', ", " . a:fun . ")", "")
+  let unqualified[1] = substitute(unqualified[1], '(, ', "(", "")
+  call append(unqualified[0], unqualified[1])
+endfunction
+
+function! s:ident_parts(word)
   let parts = map( split(a:word, '\.')
               \  , {_, v -> substitute(v, "\\W", "", "g")}
               \  )
@@ -263,11 +291,9 @@ function! IdentParts(word)
     echom "Not a qualified identifier"
     return []
   endif
-
   let qualifier  = join(parts[0:-2], '.')
   let clean      = join(parts[0:-1], '.')
   let ident      = parts[-1]
-
   return [qualifier, ident, clean]
 endfunction
 
