@@ -198,9 +198,10 @@ endfunction
 function! Hoogle(type)
   let line = line(".")
   :call fzf#run({
-  \ 'source': 'hoogle "' . a:type . '" --count=100',
+  \ 'source': 'stack hoogle "' . a:type . '" -- --count=100',
   \ 'sink': {fun -> s:hoogle_sink(line, fun)},
-  \ 'up': '20%'})
+  \ 'options' : "--preview 'stack hoogle $(echo {} | awk \"{print \\$2\\\" +\\\"\\$1}\") -- --info'",
+  \ 'up': '40%'})
 endfunction
 
 command! -nargs=* Hoogle
