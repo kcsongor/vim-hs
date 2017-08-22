@@ -149,7 +149,7 @@ function! AddLanguagePragma()
   :call fzf#run({
   \ 'source': 'ghc --supported-languages',
   \ 'sink': {lp -> append(0, "{-# LANGUAGE " . lp . " #-}")},
-  \ 'up': '20%'})
+  \ 'down': '20%'})
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -164,7 +164,7 @@ function! ImportModule()
   call fzf#run({
   \ 'source': 'ag --nocolor --nogroup --nofilename "import qualified (\S+)(\s)+as" | perl -lpe "s/ +/ /g" | grep -v "^--" | sort | uniq',
   \ 'sink': {i -> append(line, i)},
-  \ 'right': '40%'})
+  \ 'down': '40%'})
 endfunction
 
 " Replace a qualified identifier with an unqualified one and add it as an explicit import
@@ -201,7 +201,7 @@ function! Hoogle(type)
   \ 'source': 'stack hoogle "' . a:type . '" -- --count=100',
   \ 'sink': {fun -> s:hoogle_sink(line, fun)},
   \ 'options' : "--preview 'stack hoogle $(echo {} | awk \"{print \\$2\\\" +\\\"\\$1}\") -- --info'",
-  \ 'up': '40%'})
+  \ 'down': '40%'})
 endfunction
 
 command! -nargs=* Hoogle
