@@ -7,20 +7,24 @@
 " Mappings
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 nnoremap <silent> --h "=HaskellModuleHeader()<CR>:0put =<cr>
-nnoremap <silent> <leader>ho :Hoogle <C-R><C-W><cr>
+nnoremap <silent> <leader>ho :call Hoogle()<cr>
+nnoremap <silent> <C-c><C-c> :Hoogle <C-R><C-W><cr>
 nnoremap <silent> <leader>li O<esc>80i-<esc>
 nnoremap <silent> <leader>cc :silent! call ToggleConcealQualified()<cr>
 
 nnoremap <silent> <leader>r :w<cr> :call ReloadGHCI()<cr>
-nnoremap <silent> <leader>sb :call <SID>send_ghci(@%)<cr>
+nnoremap <silent> <leader>lf :w<cr> :call LoadGhci()<cr>
+"nnoremap <silent> <leader>rr :w<cr> :call ReloadGHCI()<cr>
+nnoremap <silent> <leader>sb :call <SID>open_cabal_repl(@%)<cr>
 vnoremap <silent> <leader>sb :call Eval()<cr>
 nnoremap <silent> <leader>sc :call <SID>send_core(@%)<cr>
-nnoremap <silent> <leader>st :call <SID>send_ghci_target(expand('%:p'))<cr>
+nnoremap <silent> <leader>st :call <SID>open_cabal_repl_target(expand('%:p'))<cr>
 
-nnoremap <silent> <leader>ec :exe "edit" . <SID>find_conf(expand('%:p'), 'cabal')<cr>
-nnoremap <silent> <leader>ey :exe "edit" . <SID>find_conf(expand('%:p'), 'yaml')<cr>
+nnoremap <silent> <leader>ec :exe "pedit" . <SID>find_conf(expand('%:p'), 'cabal')<cr>
+nnoremap <silent> <leader>ey :exe "pedit" . <SID>find_conf(expand('%:p'), 'yaml')<cr>
 nnoremap <silent> <leader>mi :call <SID>insert_module_name(expand('%:p:r'))<cr>
 noremap <leader>la :call AddLanguagePragma()<cr>
+noremap <leader>oa :call AddOption()<cr>
 noremap <leader>ia :call ImportModule()<cr>
 noremap <leader>si mz:Tabularize/as<CR>vip:sort<CR>`z
 noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:!sort\|uniq<CR>`z
@@ -52,23 +56,23 @@ endfunction
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 function! GhciBuffer()
-  return max([bufwinnr("repl"), bufwinnr("ghci")])
+  return max([bufwinnr("repl"), bufwinnr("ghci"), bufwinnr("term")])
 endfunction
 
 " Open current cabal project in GHCI
-function! s:send_ghci_target(path)
+function! s:open_cabal_repl_target(path)
     let bnr = GhciBuffer()
     if bnr > 0
       :exe bnr . "wincmd w"
     else
-      let cabal = FindConf(a:path, 'cabal')
+      let cabal = s:find_conf(a:path, 'cabal')
       vnew | :call termopen("stack repl " . fnamemodify(cabal, ':h')) | :startinsert
     endif
 endfunction
 
 function! Eval()
   exe "'<,'>y z"
-  let cur = bufwinnr('%')
+  let cur = winnr()
   let bnr = GhciBuffer()
   if bnr > 0
     exe bnr . "wincmd w"
@@ -77,25 +81,49 @@ function! Eval()
   endif
 endfunction
 
-" Open current file in GHCI
-function! s:send_ghci(file)
+function! s:open_cabal_repl(file)
     let bnr = GhciBuffer()
     if bnr > 0
-      :exe bnr . "wincmd w"
+      :exe bnr . "wincmd w" | :startinsert
     else
-      vnew | :call termopen("stack ghci " . a:file) | :startinsert
+      vnew | :call termopen("cabal new-repl") | :startinsert
     endif
 endfunction
 
 " Reload GHCi
 function! ReloadGHCI()
+    let cur = winnr()
     let bnr = GhciBuffer()
-    let cur = bufwinnr("%")
     if bnr > 0
       :exe bnr . "wincmd w"
       :startinsert
-      :call feedkeys("\<C-l>:r\<cr>\<Esc>\<C-\>\<C-n>:".cur."wincmd w\<cr>h")
+      :call nvim_input("\<C-l>:r\<cr>\<Esc>\<C-\>\<C-n>:".cur."wincmd w\<cr>h")
     endif
+endfunction
+
+" Reload GHCi
+function! LoadGhci()
+    let bnr = GhciBuffer()
+    let cur = winnr()
+    let path  = expand('%:p')
+    if bnr > 0
+      :exe bnr . "wincmd w"
+      :startinsert
+      :call nvim_input("\<C-l>:load ".path."\<cr>\<Esc>\<C-\>\<C-n>:".cur."wincmd w\<cr>h")
+    endif
+endfunction
+
+function! GetGHCIContent()
+    let bnr = GhciBuffer()
+    let cur = winnr()
+    if bnr > 0
+        :exe bnr . "wincmd w"
+        :let buff = join(getline(0, '$'), "\n")
+        :exe cur . "wincmd w"
+        :stopinsert
+        return buff
+    endif
+    :stopinsert
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -113,6 +141,9 @@ function! s:send_core(file)
       \           . "-dsuppress-var-kinds "
       \           . "-dsuppress-type-applications "
       \           . "-dsuppress-uniques "
+      \           . "-fspecialise-aggressively "
+      \           . "-fstatic-argument-transformation "
+      \           . "-fforce-recomp "
       \           . a:file
       vnew | :call termopen(command) | :startinsert
     endif
@@ -153,18 +184,32 @@ function! AddLanguagePragma()
 endfunction
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+" Command line flags
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+function! AddOption()
+  :call fzf#run({
+  \ 'source': 'ghc --show-options',
+  \ 'sink': {opt -> append(0, "{-# OPTIONS_GHC " . opt . " #-}")},
+  \ 'down': '20%'})
+endfunction
+
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Imports
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 " Find existing import statements in project and pick one
-function! ImportModule()
-  normal G
-  ?^import
-  let line = line(".")
-  call fzf#run({
-  \ 'source': 'ag --nocolor --nogroup --nofilename "import qualified (\S+)(\s)+as" | perl -lpe "s/ +/ /g" | grep -v "^--" | sort | uniq',
-  \ 'sink': {i -> append(line, i)},
-  \ 'down': '40%'})
+function! ImportModule(...)
+  let line = search('^import', 'n')
+  if (0 < a:0)
+    :call append(line, 'import ' . a:1)
+  else
+    call fzf#run({
+    \ 'source': 'ag --nocolor --nogroup --nofilename "import qualified (\S+)(\s)+as" | perl -lpe "s/ +/ /g" | grep -v "^--" | sort | uniq',
+    \ 'sink': {i -> append(line, i)},
+    \ 'down': '40%'})
+  endif
 endfunction
 
 " Replace a qualified identifier with an unqualified one and add it as an explicit import
@@ -195,12 +240,13 @@ endfunction
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Hoogle
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-function! Hoogle(type)
+function! Hoogle(...)
   let line = line(".")
+  let type = 0 < a:0 ? a:1 : inputdialog("Hoogle: ")
   :call fzf#run({
-  \ 'source': 'stack hoogle "' . a:type . '" -- --count=100',
+  \ 'source': 'hoogle search "' . type . '" --count=100',
   \ 'sink': {fun -> s:hoogle_sink(line, fun)},
-  \ 'options' : "--preview 'stack hoogle $(echo {} | awk \"{print \\$2\\\" +\\\"\\$1}\") -- --info'",
+  \ 'options' : "--preview 'hoogle search $(echo {} | awk \"{print \\$2\\\" +\\\"\\$1}\") -- --info'",
   \ 'down': '40%'})
 endfunction
 
@@ -212,8 +258,8 @@ function! s:hoogle_sink(line, fun)
     let [modulename, type] = split(a:fun, "::")
     let [module, name] = split(modulename, " ")
     call AddImport(module, name)
-  else
-    call append(a:line, a:fun)
+  elseif (match(a:fun, "^module" >= 0))
+    call ImportModule(substitute(a:fun, "^module ", "", "g"))
   endif
 endfunction
 
@@ -224,13 +270,20 @@ function! s:get_src_dir(path)
   return split(a:path, 'src/')[0]
 endfunction
 
-function! GetModuleName()
-  let save_pos = getpos(".")
-  call search('^module')
-  normal "1y$
-  let module = split(@1, ' \+')[1]
-  call setpos('.', save_pos)
-  return module
+function! GetModuleName() abort
+    let l:regex = '^\C>\=\s*module\s\+\zs[A-Za-z0-9.]\+'
+    for l:lineno in range(1, line('$'))
+        let l:line = getline(l:lineno)
+        let l:pos = match(l:line, l:regex)
+        if l:pos != -1
+            let l:synname = synIDattr(synID(l:lineno, l:pos+1, 0), 'name')
+            if l:synname !~# 'Comment'
+                return matchstr(l:line, l:regex)
+            endif
+        endif
+        let l:lineno += 1
+    endfor
+    return 'Main'
 endfunction
 
 function! FixLocation()
@@ -253,8 +306,10 @@ function! s:insert_module_name(path)
   exe ':call append(0, "module ' . mname . ' where")'
 endfunction
 
-function! AddImport(module, fun)
-  let [qualified, unqualified] = ImportStatements(a:module)
+function! AddImport(...)
+  let module = 0 < a:0 ? a:1 : inputdialog("Module name to import from: ")
+  let fun = 1 < a:0 ? a:2 : inputdialog("Function name: ")
+  let [qualified, unqualified] = ImportStatements(module)
 
   if (len(unqualified) > 0)
     " unqalified import exists, use it
@@ -272,14 +327,12 @@ function! AddImport(module, fun)
   else
     " create new unqalified import
     let save_pos = getpos(".")
-    normal G
-    ?^import
-    let line = line(".")
+    let line = search('^import', 'n')
     call add(unqualified, line)
-    call add(unqualified, "import           " . a:module . " ()")
+    call add(unqualified, "import           " . module . " ()")
     call setpos('.', save_pos)
   endif
-  let unqualified[1] = substitute(unqualified[1], ')$', ", " . a:fun . ")", "")
+  let unqualified[1] = substitute(unqualified[1], ')$', ", " . fun . ")", "")
   let unqualified[1] = substitute(unqualified[1], '(, ', "(", "")
   call append(unqualified[0], unqualified[1])
 endfunction
