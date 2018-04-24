@@ -1,51 +1,17 @@
 " Note:
-"   Some of the functions assume that the source files are under 'src/'
+"   This 'plugin' is not portable at all
 "   The repl bindings only work with Neovim
 "   fzf is required for adding language pragmas
 
-" Mappings {{{
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-nnoremap <silent> --h "=HaskellModuleHeader()<CR>:0put =<cr>
-nnoremap <silent> <leader>ho :call Hoogle()<cr>
-nnoremap <silent> <C-c><C-c> :Hoogle <C-R><C-W><cr>
-nnoremap <silent> <leader>li O<esc>80i-<esc>
-nnoremap <silent> <leader>cc :silent! call ToggleConcealQualified()<cr>
+nnoremap <Plug>Edit-stack.yaml :exe "pedit" . <SID>find_conf(expand('%:p'), 'yaml')<cr>
+nnoremap <Plug>Edit-cabal-file :exe "pedit" . <SID>find_conf(expand('%:p'), 'cabal')<cr>
+nnoremap <Plug>Jump-to-imports :call JumpToImports()<cr>
 
-nnoremap <silent> <leader>r :w<cr> :call ReloadGHCI()<cr>
-nnoremap <silent> <leader>R :w<cr> :call ReloadGHCIAndRun()<cr>
-nnoremap <silent> <leader>lf :w<cr> :call LoadGhci()<cr>
-noremap <silent> <leader>ioa :call AddOptionGHCI()<cr>
-"nnoremap <silent> <leader>rr :w<cr> :call ReloadGHCI()<cr>
-nnoremap <silent> <leader>sb :call <SID>open_repl()<cr>
-vnoremap <silent> <leader>sb :call Eval()<cr>
-nnoremap <silent> <leader>sc :call <SID>send_core(@%)<cr>
-"nnoremap <silent> <leader>st :call <SID>open_repl_target(expand('%:p'))<cr>
+nnoremap <Plug>Open-REPL :call <SID>open_repl()<cr>
+nnoremap <Plug>View-core :call <SID>send_core(@%)<cr>
+nnoremap <Plug>Type-under-cursor :call <SID>type_at()<cr>
+nnoremap <Plug>Identifier-information :echo WhichModule(<SID>ident_under_cursor())<cr>
 
-nnoremap <silent> <leader>ec :exe "pedit" . <SID>find_conf(expand('%:p'), 'cabal')<cr>
-nnoremap <silent> <leader>ey :exe "pedit" . <SID>find_conf(expand('%:p'), 'yaml')<cr>
-nnoremap <silent> <leader>mi :call <SID>insert_module_name()<cr>
-nnoremap <silent> <leader>wm :echo WhichModule(<SID>ident_under_cursor())<cr>
-noremap <leader>la :call AddLanguagePragma()<cr>
-noremap <leader>oa :call AddOption()<cr>
-noremap <leader>ia :call ImportModule()<cr>
-noremap <leader>si mz:Tabularize/as<CR>vip:sort<CR>`z
-noremap <leader>sl mzgg:Tabularize/#-}<CR>vip:!sort\|uniq<CR>`z
-vnoremap <silent> <Leader>bb :'<,'>!brittany<cr>
-
-nnoremap <silent> <leader>gi :call JumpToImports()<cr>
-nnoremap <silent> <leader>it :call <SID>type(
-  \ <SID>paren_operator(<SID>ident_under_cursor()))<cr>
-nnoremap <silent> <leader>tt :call <SID>type_at()<cr>
-nnoremap <silent> <leader>ik :call <SID>kind(
-  \ <SID>paren_operator(<SID>ident_under_cursor()), 0)<cr>
-nnoremap <silent> <leader>ir :call <SID>kind(
-  \ "Rep " . <SID>paren_operator(<SID>ident_under_cursor()), 1)<cr>
-nnoremap <silent> <leader>ii :call <SID>info(
-  \ <SID>ident_under_cursor())<cr>
-
-nnoremap <leader>uq :call Unqualify()<cr>
-
-"}}}
 " Config files {{{
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
@@ -322,7 +288,6 @@ function! Hoogle(...)
   \ 'sink': {fun -> s:hoogle_sink(line, fun)},
   \ 'down': '40%'})
 endfunction
-  " \ 'options' : "--preview 'hoogle search $(echo {} | awk \"{print \\$2\\\" +\\\"\\$1}\") -- --info'",
 
 command! -nargs=* Hoogle
   \ call Hoogle(<q-args>)
@@ -656,13 +621,6 @@ function! QualModule(qualifier)
   return -1
 endfunction
 
-" TODO: get indentent block of text
-function! IndentBlock()
-  let cur_line_nr = line('.')
-  let cur_indent = indent(cur_line_nr)
-  return getline(cur_line_nr)
-endfunction
-
 function! Ghci_complete(findstart, base)
     if a:findstart
         " locate the start of the word
@@ -690,4 +648,3 @@ setlocal completefunc=Ghci_complete
 
 let g:haskell_disable_TH = 1
 let g:haskell_enable_typeroles = 1
-call SuperTabSetDefaultCompletionType("<c-x><c-u>")
