@@ -5,12 +5,18 @@
 
 nnoremap <Plug>Edit-stack.yaml :exe "pedit" . <SID>find_conf(expand('%:p'), 'yaml')<cr>
 nnoremap <Plug>Edit-cabal-file :exe "pedit" . <SID>find_conf(expand('%:p'), 'cabal')<cr>
-nnoremap <Plug>Jump-to-imports :call JumpToImports()<cr>
+nnoremap <Plug>Jump-to-imports :call Haskell_jump_to_imports()<cr>
 
 nnoremap <Plug>Open-REPL :call <SID>open_repl()<cr>
 nnoremap <Plug>View-core :call <SID>send_core(@%)<cr>
 nnoremap <Plug>Type-under-cursor :call <SID>type_at()<cr>
 nnoremap <Plug>Identifier-information :echo WhichModule(<SID>ident_under_cursor())<cr>
+nnoremap <Plug>Find-notes :call <SID>ghc_notes("")<cr>
+nnoremap <Plug>Find-note-under-cursor :call <SID>ghc_notes(<SID>get_inside_text_object("["))<cr>
+nnoremap <Plug>:i-cword :call <SID>info(<SID>ident_under_cursor())<cr>
+nnoremap <Plug>:k-cword <SID>kind(<SID>paren_operator(<SID>ident_under_cursor()), 0)<cr>
+nnoremap <Plug>:rep-cword <SID>kind("Rep " . <SID>paren_operator(<SID>ident_under_cursor()), 1)<cr>
+nnoremap <Plug>:t-cword :call <SID>type(<SID>paren_operator(<SID>ident_under_cursor()))<cr>
 
 " Config files {{{
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -85,14 +91,40 @@ function! s:type_at()
 endfunction
 
 " Reload GHCi
-function! ReloadGHCI()
+function! ReloadGHCItmux()
     :call s:send_right(":r")
+endfunction
+
+function! s:is_tmux()
+  return len(systemlist("echo $TMUX")) > 0
+endfunction
+
+function! ReloadGHCI()
+  if (s:is_tmux())
+    call ReloadGHCItmux()
+  else
+    call ReloadGHCInvim()
+  endif
 endfunction
 
 function! ReloadGHCIAndRun()
     :call s:send_right(":r")
     :call VimuxSendKeys("up")
     :call s:send_right("up")
+endfunction
+
+function! SendGhci(text)
+    let cur = winnr()
+    let bnr = GhciBuffer()
+    if bnr > 0
+      :exe bnr . "wincmd w"
+      :startinsert
+      :call nvim_input("\<C-l>".a:text."\<cr>\<Esc>\<C-\>\<C-n>:".cur."wincmd w\<cr>h")
+    endif
+endfunction
+
+function! ReloadGHCInvim()
+    call SendGhci(":r")
 endfunction
 
 function! AddOptionGHCI()
@@ -171,15 +203,12 @@ endfunction
 " Language pragmas {{{
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-function! AddLanguagePragma()
+function! Haskell_add_language_pragma()
   let line = max([0, search('^{-# LANGUAGE', 'n') - 1])
-
   :call fzf#run({
   \ 'source': 'ghc --supported-languages',
   \ 'sink': {lp -> append(line, "{-# LANGUAGE " . lp . " #-}")},
-  \ 'options': '--multi --ansi --reverse --prompt "LANGUAGE> "
-               \ --color fg:245,bg:233,hl:255,fg+:15,bg+:235,hl+:255
-               \ --color info:250,prompt:255,spinner:108,pointer:35,marker:35',
+  \ 'options': '--multi --ansi --reverse --prompt "LANGUAGE> "',
   \ 'down': '25%'})
 endfunction
 
@@ -187,7 +216,7 @@ endfunction
 " Command line flags {{{
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-function! AddOption()
+function! Haskell_add_compiler_flag()
   :call fzf#run({
   \ 'source': 'ghc --show-options',
   \ 'sink': {opt -> append(0, "{-# OPTIONS_GHC " . opt . " #-}")},
@@ -199,20 +228,18 @@ endfunction
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 command! AddPackage
-  \ call AddPackage()
+  \ call Haskell_add_package()
 
-function! AddPackage()
+function! Haskell_add_package()
+  " cabal list --simple-output > ~/.cabal-list.txt
   :call fzf#run({
   \ 'source': 'cat ~/.cabal-list.txt',
   \ 'sink': {lp -> append(line('.'), '                     , ' . join(split(lp, ' '), ' == '))},
-  \ 'options': '--multi --ansi --reverse --prompt "LANGUAGE> "
-               \ --color fg:245,bg:233,hl:255,fg+:15,bg+:235,hl+:255
-               \ --color info:250,prompt:255,spinner:108,pointer:35,marker:35',
+  \ 'options': '--multi --ansi --reverse --prompt "Package> "',
   \ 'down': '25%'})
 endfunction
 
-
-function! JumpToImports()
+function! Haskell_jump_to_imports()
     let line = search('^import', 'n')
     if (line > 0)
         :execute "normal " . line . "G0|"
@@ -220,7 +247,7 @@ function! JumpToImports()
 endfunction
 
 " Find existing import statements in project and pick one
-function! ImportModule()
+function! Haskell_import_module()
   let imported_modules = map(s:imported_modules(), {k, v -> v.module_name})
   let module_lines = split(system('ag --nocolor --nogroup --nofilename "^import"'), '\n')
   let modules = []
@@ -255,7 +282,7 @@ endfunction
 " endfunction
 
 " Replace a qualified identifier with an unqualified one and add it as an explicit import
-function! Unqualify()
+function! Haskell_unqualify()
   let save_pos = getpos(".")
   let parts = s:ident_parts(expand('<cWORD>'))
   if (!parts.qualifier)
@@ -298,7 +325,7 @@ function! s:hoogle_sink(line, fun)
     let [module, name] = split(modulename, " ")
     call AddImport(module, name)
   elseif (match(a:fun, "^module" >= 0))
-    call ImportModule(split(substitute(a:fun, "^module ", "", "g"))[0])
+    call Haskell_import_module(split(substitute(a:fun, "^module ", "", "g"))[0])
   endif
 endfunction
 
@@ -323,9 +350,7 @@ endfunction
 
 function! s:hoogle_modules(identifier)
     let modules = []
-    let hoogle_matches = split(
-      \ system('hoogle search "'.a:identifier.'" --count=100'),
-      \ "\n")
+    let hoogle_matches = systemlist('hoogle search "'.a:identifier.'" --count=100')
     for m in hoogle_matches
       if (match(m, "^--") >= 0)
         break
@@ -470,7 +495,7 @@ function! s:insert_module_name()
   exe ':call append(0, "module ' . mname . ' where")'
 endfunction
 
-function! ImportStatements(module)
+function! s:import_statements(module)
   let save_pos = getpos(".")
   let qualified = []
   let unqualified = []
@@ -492,7 +517,7 @@ endfunction
 function! AddImport(...)
   let module = 0 < a:0 ? a:1 : inputdialog("Module name to import from: ")
   let fun = 1 < a:0 ? a:2 : inputdialog("Function name: ")
-  let [qualified, unqualified] = ImportStatements(module)
+  let [qualified, unqualified] = s:import_statements(module)
   if (len(unqualified) > 0)
     " unqalified import exists, use it
     exe unqualified[0] . "d"
@@ -520,8 +545,31 @@ function! AddImport(...)
 endfunction
 
 "}}}
+" Working on GHC {{{
+function! s:is_ghc()
+  let path = s:git_root()
+  if (match(path, "ghc") >= 0)
+    return 1
+  else
+    return 0
+  endif
+endfunction
+
+function! s:ghc_notes(which)
+  if (!s:is_ghc())
+    return
+  endif
+  call fzf#vim#grep('git grep --line-number "^\\({\\?--\\? \\?\\)\\?Note.\\+\\['.a:which.'"', 0,
+    \ { 'dir': s:git_root(), 'options': '-1 -0' }, 0)
+endfunction
+
+" }}}
 " Utilities {{{
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+function! s:git_root()
+  return systemlist('git rev-parse --show-toplevel')[0]
+endfunction
+
 function! s:send_right(cmd)
     let cmd = a:cmd
     "let cmd = substitute(cmd, "'\\([^']\\+\\)'", "`'\\1'`", "g")
@@ -532,6 +580,10 @@ function! s:send_right(cmd)
     ":call VimuxSendKeys("C-c")
     :call VimuxSendKeys("C-l")
     :call VimuxRunCommand(cmd)
+endfunction
+
+function! GhciBuffer()
+  return max([bufwinnr("repl"), bufwinnr("ghci"), bufwinnr("interactive")])
 endfunction
 
 command! -nargs=0 NewModule
@@ -643,6 +695,18 @@ function! Ghci_complete(findstart, base)
 endfun
 
 setlocal completefunc=Ghci_complete
+
+function! s:get_inside_text_object(object)
+  let l:save_clipboard = &clipboard
+  set clipboard= " Avoid clobbering the selection and clipboard registers.
+  let l:save_reg = getreg('"')
+  let l:save_regmode = getregtype('"')
+  execute("normal! yi" . a:object)
+  let l:text = @@ " Your text object contents are here.
+  call setreg('"', l:save_reg, l:save_regmode)
+  let &clipboard = l:save_clipboard
+  return l:text
+endfunction
 
 "}}}
 
